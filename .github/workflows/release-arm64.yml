@@ -13,6 +13,21 @@ jobs:
     env:
       BUILD_ABI: arm64-v8a
     steps:
+      - name: Check required signing configuration
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [[ -z ${!name:-} ]]; then
+              echo "Missing repository secret: $name" >&2
+              exit 1
+            fi
+          done
       - name: Fetch source code
         uses: actions/checkout@v5
         with:
