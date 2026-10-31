@@ -1,0 +1,80 @@
+name: Build signed ARM64 release APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      BUILD_ABI: arm64-v8a
+    steps:
+      - name: Fetch source code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Setup Android environment
+        uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: 'false'
+      - name: Install Android SDK, NDK and CMake
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.1.0' 'ndk;28.0.13004108' 'cmake;3.31.6'
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y extra-cmake-modules gettext
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+      - name: Build release APK and run sync unit tests
+        run: >-
+          ./gradlew :app:assembleRelease :app:testDebugUnitTest
+          --tests org.fcitx.fcitx5.android.rustclipsync.SyncStateTest
+          --no-daemon --console=plain
+      - name: Sign and verify release APK
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${KEYSTORE_BASE64:?Missing KEYSTORE_BASE64 secret}"
+          : "${KEYSTORE_PASSWORD:?Missing KEYSTORE_PASSWORD secret}"
+          : "${KEY_ALIAS:?Missing KEY_ALIAS secret}"
+          : "${KEY_PASSWORD:?Missing KEY_PASSWORD secret}"
+          umask 077
+          keystore="$RUNNER_TEMP/rustclipsync-release.p12"
+          trap 'rm -f -- "$keystore"' EXIT
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/release/*-unsigned.apk)
+          test "${#apks[@]}" -eq 1
+          tools="$ANDROID_HOME/build-tools/36.1.0"
+          "$tools/zipalign" -P 16 -f 4 "${apks[0]}" "$RUNNER_TEMP/aligned.apk"
+          mkdir -p release-output
+          "$tools/apksigner" sign --ks "$keystore" --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD \
+            --out release-output/rustclipsync-android-arm64-release.apk "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" verify --verbose --print-certs release-output/rustclipsync-android-arm64-release.apk
+          "$tools/aapt" dump badging release-output/rustclipsync-android-arm64-release.apk > "$RUNNER_TEMP/release-badging.txt"
+          grep -E "^package: name='org\\.fcitx\\.fcitx5\\.android' " "$RUNNER_TEMP/release-badging.txt"
+          grep -Fx "native-code: 'arm64-v8a'" "$RUNNER_TEMP/release-badging.txt"
+          sha256sum release-output/rustclipsync-android-arm64-release.apk > release-output/SHA256SUMS
+      - name: Upload signed release APK
+        uses: actions/upload-artifact@v5
+        with:
+          name: rustclipsync-android-arm64-release-${{ github.sha }}
+          path: release-output/
+          if-no-files-found: error
+          retention-days: 30
