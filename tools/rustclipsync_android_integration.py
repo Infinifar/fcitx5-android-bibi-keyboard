@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run V1 instrumentation against a disposable emulator and synthetic server.
+"""Run RustClipSync instrumentation against a disposable emulator and synthetic server.
 
 Usage: python3 tools/rustclipsync_android_integration.py SERVER APP_APK TEST_APK ADB EMULATOR_SERIAL
 Only an emulator-* serial is accepted; this never installs on a physical device.

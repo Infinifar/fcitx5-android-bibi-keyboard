@@ -1,6 +1,8 @@
-# RustClipSync V1 同步模块（开发中）
+# RustClipSync 同步模块（开发中）
 
-该分支基于 `BryceWG/fcitx5-android-bibi-keyboard`，在输入法进程中增加 RustClipSync V1 文本同步。原说点啥语音功能保留；说点啥剪贴板同步桥接不再启动。本模块不兼容 SyncClipboard 旧协议，需配合 V1 服务端和 V1 桌面客户端使用。
+网络请求统一使用 `/api/...`。需要与提供该接口的服务端配套更新；设备身份、游标及本机加密存储不因路径改名而重置。Rust 桌面端与 Omaclipsync 共用 rustclipsync-core；本安卓模块本轮保留 Kotlin 实现并同步接口地址，不引入 JNI。
+
+该分支基于 `BryceWG/fcitx5-android-bibi-keyboard`，在输入法进程中增加 RustClipSync 文本同步。原说点啥语音功能保留；说点啥剪贴板同步桥接不再启动。本模块不兼容 SyncClipboard 旧协议，需配合 当前 RustClipSync 服务端和桌面客户端使用。
 
 在输入法的剪贴板设置中填写 HTTPS 服务地址、管理员账户和密码进行配对，启用同步并选择是否同步已标记的敏感内容。敏感内容发送和接收默认关闭；启用后接收的剪贴板会保留敏感标记。没有被来源应用标记的秘密无法自动识别。账户密码只用于登记设备，设备令牌和待发送文本使用 Android Keystore 加密后写入不参与系统备份的应用私有目录。设置界面会显示非秘密的设备 ID，供服务端管理和撤销使用。
 

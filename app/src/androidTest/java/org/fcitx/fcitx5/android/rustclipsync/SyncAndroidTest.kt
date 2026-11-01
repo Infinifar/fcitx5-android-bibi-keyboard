@@ -81,7 +81,7 @@ class SyncAndroidTest {
         }
     }
 
-    @Test fun httpsTransportMatchesLiveV1Server() {
+    @Test fun httpsTransportMatchesCurrentServer() {
         val context = fixtureContext()
         val url = requireNotNull(args.getString("rcs_url"))
         check(url.startsWith("https://localhost:"))

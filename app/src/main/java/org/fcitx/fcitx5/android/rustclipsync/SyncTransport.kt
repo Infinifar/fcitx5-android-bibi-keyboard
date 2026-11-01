@@ -39,7 +39,7 @@ internal class SyncTransport(serverUrl: String) {
         require(user.isNotEmpty() && !user.contains(':') && !user.contains('\n') && !user.contains('\r'))
         val auth = "Basic " + Base64.encodeToString("$user:$password".toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         val body = JSONObject().put("deviceId", deviceId).put("deviceToken", token).toString().toByteArray(Charsets.UTF_8)
-        val response = json(request("POST", "v1/devices", auth, body, "application/json"))
+        val response = json(request("POST", "api/devices", auth, body, "application/json"))
         val epoch = response.getString("epoch")
         requireUuid(epoch)
         val ack = response.getLong("ackRevision")
@@ -48,18 +48,18 @@ internal class SyncTransport(serverUrl: String) {
         return epoch to ack
     }
 
-    fun state(session: StoredSession): ServerState = parseState(json(request("GET", "v1/state", bearer(session))))
+    fun state(session: StoredSession): ServerState = parseState(json(request("GET", "api/state", bearer(session))))
 
     fun waitForChanges(session: StoredSession): ServerState? {
         val s = session.state
         requireUuid(s.epoch)
-        val bytes = request("GET", "v1/changes?epoch=${s.epoch}&after=${s.cursor}", bearer(session), timeoutMs = 30_000)
+        val bytes = request("GET", "api/changes?epoch=${s.epoch}&after=${s.cursor}", bearer(session), timeoutMs = 30_000)
         return bytes?.let { parseState(JSONObject(it.toString(Charsets.UTF_8))) }
     }
 
     fun content(session: StoredSession, message: RemoteMessage): String {
         requireUuid(message.id)
-        val bytes = requireNotNull(request("GET", "v1/messages/${message.id}/content", bearer(session), limit = SyncStore.MAX_TEXT_BYTES))
+        val bytes = requireNotNull(request("GET", "api/messages/${message.id}/content", bearer(session), limit = SyncStore.MAX_TEXT_BYTES))
         val decoder = Charsets.UTF_8.newDecoder()
         return decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
     }
@@ -68,7 +68,7 @@ internal class SyncTransport(serverUrl: String) {
         requireUuid(outbox.copy.id)
         val bytes = outbox.copy.text.toByteArray(Charsets.UTF_8)
         require(bytes.size <= SyncStore.MAX_TEXT_BYTES)
-        val reply = json(request("PUT", "v1/messages/${outbox.copy.id}", bearer(session), bytes,
+        val reply = json(request("PUT", "api/messages/${outbox.copy.id}", bearer(session), bytes,
             "text/plain; charset=utf-8", headers = mapOf("X-RCS-Epoch" to session.state.epoch,
                 "X-RCS-Base-Revision" to outbox.baseRevision.toString(),
                 "X-RCS-Sensitive" to if (outbox.copy.sensitive) "1" else "0")))
@@ -79,7 +79,7 @@ internal class SyncTransport(serverUrl: String) {
     /** Returns null when cancelled, or the revision if the request had already committed. */
     fun cancel(session: StoredSession, outbox: Outbox): Long? {
         requireUuid(outbox.copy.id)
-        val reply = json(request("DELETE", "v1/messages/${outbox.copy.id}", bearer(session),
+        val reply = json(request("DELETE", "api/messages/${outbox.copy.id}", bearer(session),
             headers = mapOf("X-RCS-Epoch" to session.state.epoch)))
         return when (reply.getString("state")) {
             "cancelled" -> null
@@ -91,7 +91,7 @@ internal class SyncTransport(serverUrl: String) {
     fun acknowledge(session: StoredSession, ack: Ack) {
         val body = JSONObject().put("epoch", session.state.epoch).put("revision", ack.revision)
             .put("messageId", ack.id).put("result", ack.result).toString().toByteArray(Charsets.UTF_8)
-        val reply = json(request("POST", "v1/ack", bearer(session), body, "application/json"))
+        val reply = json(request("POST", "api/ack", bearer(session), body, "application/json"))
         require(reply.getLong("ackRevision") >= ack.revision)
     }
 
