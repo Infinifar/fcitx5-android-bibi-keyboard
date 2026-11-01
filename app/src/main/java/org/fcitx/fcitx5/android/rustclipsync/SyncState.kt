@@ -77,6 +77,18 @@ internal data class SyncState(
             ack = Ack(message.id, message.revision, "applied")) else copy(applying = null)
     }
 
+    fun finishApply(messageId: String, result: ClipboardApplyResult): SyncState {
+        require(applying?.id == messageId)
+        return when (result) {
+            ClipboardApplyResult.NotAttempted -> finishApply(messageId, false)
+            ClipboardApplyResult.Applied -> finishApply(messageId, true)
+            ClipboardApplyResult.Unknown -> recoverAmbiguousApply()
+        }
+    }
+
+    fun withSensitivePolicy(allowSensitive: Boolean): SyncState =
+        if (!allowSensitive && (queued ?: pending?.copy)?.sensitive == true) localCleared() else this
+
     /** A crash could have happened on either side of the OS write. Do not blindly replay it. */
     fun recoverAmbiguousApply(): SyncState {
         val message = applying ?: return this
@@ -91,3 +103,27 @@ internal data class LocalCopy(val id: String, val text: String, val createdAtMs:
 internal data class Outbox(val copy: LocalCopy, val baseRevision: Long, val attempted: Boolean)
 internal data class RemoteMessage(val id: String, val revision: Long, val sourceDeviceId: String, val sensitive: Boolean = false)
 internal data class Ack(val id: String, val revision: Long, val result: String)
+
+internal enum class ClipboardApplyResult { NotAttempted, Applied, Unknown }
+
+internal data class ClipboardEcho(val messageId: String, val until: Long) {
+    fun matches(marker: String?, now: Long) = marker == messageId && now <= until
+}
+
+/** Keep the marker active throughout IPC, including an ambiguous write failure. */
+internal fun applyClipboardWithEcho(
+    messageId: String,
+    clock: () -> Long,
+    echo: (ClipboardEcho) -> Unit,
+    write: () -> Unit,
+): ClipboardApplyResult {
+    echo(ClipboardEcho(messageId, Long.MAX_VALUE))
+    return try {
+        write()
+        ClipboardApplyResult.Applied
+    } catch (_: Exception) {
+        ClipboardApplyResult.Unknown
+    } finally {
+        echo(ClipboardEcho(messageId, clock() + 3_000))
+    }
+}

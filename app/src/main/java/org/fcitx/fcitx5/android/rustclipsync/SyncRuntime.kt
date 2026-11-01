@@ -40,7 +40,7 @@ internal class SyncRuntime(private val service: Context, private val activeImeOv
     private val runId = AtomicLong()
     private val generation = AtomicLong()
     @Volatile private var localQueue = LocalQueue()
-    private val echo = AtomicReference<Echo?>(null)
+    private val echo = AtomicReference<ClipboardEcho?>(null)
     @Volatile private var running = false
     private var sender: ScheduledExecutorService? = null
     private var localWriter: java.util.concurrent.ExecutorService? = null
@@ -59,7 +59,7 @@ internal class SyncRuntime(private val service: Context, private val activeImeOv
         val now = SystemClock.elapsedRealtime()
         val expected = echo.get()
         val marker = if (Build.VERSION.SDK_INT >= 24) clip?.description?.extras?.getString(MARKER) else null
-        if (expected != null && now <= expected.until && marker == expected.messageId) {
+        if (expected?.matches(marker, now) == true) {
             return@OnPrimaryClipChangedListener
         }
         echo.set(null)
@@ -231,10 +231,7 @@ internal class SyncRuntime(private val service: Context, private val activeImeOv
             if (localQueue.busy.get() != 0) return
             var session = store.load() ?: return
             if (!session.paired || !session.enabled || !active(run)) return
-            if (!prefs.getBoolean(RCS_ALLOW_SENSITIVE, false) &&
-                (session.state.queued?.sensitive == true || (session.state.pending?.copy?.sensitive == true && session.state.queued == null))) {
-                session = store.update { current -> current.copy(state = current.state.localCleared()) }
-            }
+            session = enforceSensitivePolicy(run, session)
             val transport = SyncTransport(session.url)
             session.state.ack?.let { ack ->
                 try { transport.acknowledge(session, ack) }
@@ -251,6 +248,9 @@ internal class SyncRuntime(private val service: Context, private val activeImeOv
                     if (same(session, current)) current.copy(state = current.state.acknowledged(ack)) else current
                 }
             }
+            // ACK can block while the user changes policy. Recheck the latest
+            // value before choosing cancellation or upload.
+            session = enforceSensitivePolicy(run, session)
             val pending = session.state.pending ?: return
             val now = System.currentTimeMillis()
             if (now - pending.copy.createdAtMs > MAX_RETRY_MS || now + CLOCK_SKEW_MS < pending.copy.createdAtMs) {
@@ -273,6 +273,9 @@ internal class SyncRuntime(private val service: Context, private val activeImeOv
                 val sending = session.state.pending ?: return
                 if (sending.copy.id != pending.copy.id || !sending.attempted || session.state.queued != null ||
                     session.state.discardPending || localQueue.busy.get() != 0) return
+                session = enforceSensitivePolicy(run, session)
+                if (session.state.discardPending || session.state.queued != null ||
+                    session.state.pending?.copy?.id != sending.copy.id) return
                 val revision = transport.send(session, sending)
                 if (!active(run)) return
                 store.update { current ->
@@ -291,6 +294,15 @@ internal class SyncRuntime(private val service: Context, private val activeImeOv
             }
         } catch (_: java.io.IOException) { connectedStatus("offline"); deferSend() }
         catch (_: Exception) { status("storage_error") }
+    }
+
+    private fun enforceSensitivePolicy(run: Long, session: StoredSession): StoredSession {
+        if (session.state.withSensitivePolicy(prefs.getBoolean(RCS_ALLOW_SENSITIVE, false)) == session.state)
+            return session
+        return store.update { current ->
+            if (!active(run) || !same(session, current)) current
+            else current.copy(state = current.state.withSensitivePolicy(prefs.getBoolean(RCS_ALLOW_SENSITIVE, false)))
+        }
     }
 
     private fun receiveLoop(run: Long) {
@@ -375,7 +387,7 @@ internal class SyncRuntime(private val service: Context, private val activeImeOv
         if (journaled.state.applying != message) return
         val latch = CountDownLatch(1)
         val allowed = AtomicBoolean(true)
-        val applied = AtomicBoolean(false)
+        val result = AtomicReference(ClipboardApplyResult.NotAttempted)
         handler.post {
             try {
                 if (allowed.compareAndSet(true, false) && active(run) && isDefaultIme() &&
@@ -387,9 +399,9 @@ internal class SyncRuntime(private val service: Context, private val activeImeOv
                         if (message.sensitive) putBoolean("android.content.extra.IS_SENSITIVE", true)
                         if (Build.VERSION.SDK_INT >= 34) putBoolean("android.content.extra.IS_REMOTE_DEVICE", true)
                     }
-                    echo.set(Echo(message.id, SystemClock.elapsedRealtime() + 3_000))
-                    clipboard.setPrimaryClip(clip)
-                    applied.set(true)
+                    result.set(applyClipboardWithEcho(message.id, SystemClock::elapsedRealtime, { echo.set(it) }) {
+                        clipboard.setPrimaryClip(clip)
+                    })
                 }
             } catch (_: Exception) { echo.set(null) }
             finally { latch.countDown() }
@@ -401,7 +413,7 @@ internal class SyncRuntime(private val service: Context, private val activeImeOv
         }
         store.update { current ->
             if (same(session, current) && current.state.applying == message)
-                current.copy(state = current.state.finishApply(message.id, applied.get())) else current
+                current.copy(state = current.state.finishApply(message.id, result.get())) else current
         }
     }
 
@@ -418,7 +430,6 @@ internal class SyncRuntime(private val service: Context, private val activeImeOv
         if (prefs.getString(RCS_STATUS, "") !in setOf("conflict", "expired", "re_pair", "storage_error")) status(value)
     }
 
-    private data class Echo(val messageId: String, val until: Long)
     private data class LocalUpdate(val text: String?, val sensitive: Boolean, val run: Long)
     private class LocalQueue {
         var latest: LocalUpdate? = null

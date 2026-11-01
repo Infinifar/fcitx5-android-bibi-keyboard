@@ -77,4 +77,56 @@ class SyncStateTest {
         val later = state.localCopy(local("next", "normal")).committed("sensitive", 5)
         assertEquals(false, later.pending?.copy?.sensitive)
     }
+
+    @Test fun writeThatThrowsAfterSideEffectIsSkippedWithoutReplay() {
+        val message = RemoteMessage("remote", 5, "other")
+        val journaled = initial.prepareApply(message)
+        var writes = 0
+        val result = applyClipboardWithEcho(message.id, { 100L }, {}) {
+            writes++
+            throw java.io.IOException("fixture write outcome unknown")
+        }
+        val recovered = journaled.finishApply(message.id, result)
+        assertEquals(1, writes)
+        assertNull(recovered.applying)
+        assertEquals(5L, recovered.cursor)
+        assertEquals(Ack(message.id, 5, "skipped"), recovered.ack)
+        assertThrows(IllegalArgumentException::class.java) { recovered.prepareApply(message) }
+    }
+
+    @Test fun unwrittenReceiveCanBeRetriedAndSuccessfulReceiveIsApplied() {
+        val message = RemoteMessage("remote", 5, "other")
+        val journaled = initial.prepareApply(message)
+        assertEquals(initial, journaled.finishApply(message.id, ClipboardApplyResult.NotAttempted))
+        assertEquals(Ack(message.id, 5, "applied"),
+            journaled.finishApply(message.id, ClipboardApplyResult.Applied).ack)
+    }
+
+    @Test fun slowClipboardWriteDoesNotConsumeEchoWindow() {
+        for (fails in listOf(false, true)) {
+            var now = 100L
+            var marker: ClipboardEcho? = null
+            val result = applyClipboardWithEcho("remote", { now }, { marker = it }) {
+                now += 5_000
+                assertEquals(true, marker?.matches("remote", now))
+                if (fails) throw java.io.IOException("fixture write outcome unknown")
+            }
+            assertEquals(if (fails) ClipboardApplyResult.Unknown else ClipboardApplyResult.Applied, result)
+            assertEquals(true, marker?.matches("remote", now + 2_999))
+            assertEquals(false, marker?.matches("remote", now + 3_001))
+            assertEquals(false, marker?.matches("different-copy", now))
+        }
+    }
+
+    @Test fun latestSensitivePolicyDiscardsOutboxWithoutResendingUncertainText() {
+        val sensitive = LocalCopy("secret", "fixture", 1, sensitive = true)
+        val pending = initial.localCopy(sensitive)
+        assertNull(pending.withSensitivePolicy(false).pending)
+        val uncertain = pending.markAttempted().withSensitivePolicy(false)
+        assertEquals(true, uncertain.discardPending)
+        assertNull(uncertain.cancelled("secret").pending)
+        assertEquals(pending, pending.withSensitivePolicy(true))
+        val publicLatest = pending.markAttempted().localCopy(local("new", "public"))
+        assertEquals(publicLatest, publicLatest.withSensitivePolicy(false))
+    }
 }
