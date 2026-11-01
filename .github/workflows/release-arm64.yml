@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version_name:
-        description: Upstream version name
+        description: RustClipSync release version name
         required: true
-        default: 0.1.3-2
+        default: 0.1.3-3
       publish_release:
         description: Publish the verified APK to GitHub Releases
         type: boolean
@@ -96,7 +96,7 @@ jobs:
           grep -E "^package: name='org\\.fcitx\\.fcitx5\\.android' " "$RUNNER_TEMP/release-badging.txt"
           grep -F "versionName='${BUILD_VERSION_NAME}'" "$RUNNER_TEMP/release-badging.txt"
           grep -Fx "native-code: 'arm64-v8a'" "$RUNNER_TEMP/release-badging.txt"
-          sha256sum release-output/rustclipsync-android-arm64-release.apk > release-output/SHA256SUMS
+          (cd release-output && sha256sum rustclipsync-android-arm64-release.apk > SHA256SUMS)
       - name: Upload signed release APK
         uses: actions/upload-artifact@v5
         with:
@@ -112,7 +112,30 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$BUILD_VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?$ ]]
+          tools="$ANDROID_HOME/build-tools/36.1.0"
+          previous=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')
+          if [[ -n "$previous" ]]; then
+            old="$RUNNER_TEMP/previous-release"
+            mkdir -p "$old"
+            gh release download "$previous" --pattern rustclipsync-android-arm64-release.apk --dir "$old"
+            "$tools/apksigner" verify --print-certs "$old/rustclipsync-android-arm64-release.apk" > "$RUNNER_TEMP/previous-certificate.txt"
+            "$tools/apksigner" verify --print-certs release-output/rustclipsync-android-arm64-release.apk > "$RUNNER_TEMP/new-certificate.txt"
+            old_signer=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/previous-certificate.txt")
+            new_signer=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/new-certificate.txt")
+            [[ -n "$old_signer" && "$old_signer" == "$new_signer" ]]
+            old_code=$("$tools/aapt" dump badging "$old/rustclipsync-android-arm64-release.apk" | sed -n "s/^package: .*versionCode='\([0-9]*\)'.*/\1/p")
+            new_code=$("$tools/aapt" dump badging release-output/rustclipsync-android-arm64-release.apk | sed -n "s/^package: .*versionCode='\([0-9]*\)'.*/\1/p")
+            [[ "$old_code" =~ ^[0-9]+$ && "$new_code" =~ ^[0-9]+$ ]]
+            (( new_code > old_code ))
+            echo "Upgrade verified: same signing certificate; versionCode $old_code -> $new_code"
+          fi
           gh release create "$BUILD_VERSION_NAME" \
             release-output/rustclipsync-android-arm64-release.apk release-output/SHA256SUMS \
+            --draft \
             --target "$GITHUB_SHA" --title "RustClipSync Android $BUILD_VERSION_NAME" \
-            --notes '基于说点啥输入法上游版本，保留语音输入；剪贴板同步使用 RustClipSync。APK 适用于 ARM64，使用本项目签名密钥签名。'
+            --notes-file "releases/$BUILD_VERSION_NAME.md"
+          verify="$RUNNER_TEMP/published-apk-check"
+          gh release download "$BUILD_VERSION_NAME" --dir "$verify"
+          cmp release-output/SHA256SUMS "$verify/SHA256SUMS"
+          (cd "$verify" && sha256sum --check SHA256SUMS)
+          gh release edit "$BUILD_VERSION_NAME" --draft=false --latest
