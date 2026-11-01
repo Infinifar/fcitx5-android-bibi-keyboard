@@ -10,6 +10,7 @@ on:
 
 jobs:
   publish:
+    if: github.repository == 'fcitx5-android/fcitx5-android'
     runs-on: ubuntu-24.04
     steps:
       - name: Fetch source code
