@@ -49,3 +49,13 @@ Android 使用本仓库的 Kotlin 状态机与 HTTPS 实现，没有链接或 ve
 新增 JVM 测试覆盖实际 loopback TLS/WSS、WS 故障后同操作 HTTP 降级、旧服务端门禁、暂停与方向、迟到 ACK、未确认撤销及全局/投递版本分离。测试使用专用假数据，不访问用户服务或系统剪贴板。完整 Android 编译与隔离模拟器测试仍用于验证 Keystore 和输入法生命周期。
 
 HTTP 接收通知的 `after` 使用已观察的全局版本，消息去重仍使用独立投递游标，避免无可投递正文时忙轮询。HTTP 租约过期的 `SESSION_OFFLINE` 只允许当前本地 generation 建立新会话并在下一轮取数据；真正的 `SESSION_REVOKED` 停止本轮自动恢复，保留配对并提示用户重新启用。迟到的旧 generation 不能用错误重连复活。
+
+可选的真实服务端互通验证（无需安装 APK）使用 JVM 启动专用临时 Rust 服务、随机本机端口和临时 TLS/WSS 代理；分别验证真实 WSS 控制及禁用 WS 后的 HTTP 降级。没有此显式环境变量时该项跳过，不会连接任何用户服务：
+
+```sh
+RCS_ANDROID_RUST_SERVER=/absolute/path/to/protocol-3/rustclipsync-server \
+  ./gradlew :app:testDebugUnitTest \
+  --tests org.fcitx.fcitx5.android.rustclipsync.SyncRustServerInteropTest
+```
+
+此验证覆盖真实服务端的方向 ACK、正文上传/接收、消息 ACK、单向过滤、暂停和会话撤销。它不会调用 Android 系统剪贴板，也不能替代 Android Keystore、输入法生命周期和设备权限验收。
