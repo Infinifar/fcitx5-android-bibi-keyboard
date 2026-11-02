@@ -11,6 +11,7 @@ internal data class SyncState(
     val discardPending: Boolean = false,
     val applying: RemoteMessage? = null,
     val ack: Ack? = null,
+    val recoveringConflict: Boolean = false,
 ) {
     init {
         require(cursor >= 0)
@@ -19,6 +20,7 @@ internal data class SyncState(
     }
 
     fun localCopy(value: LocalCopy, baseRevision: Long = cursor): SyncState {
+        if (recoveringConflict) return this
         require(baseRevision >= cursor)
         val current = pending
         return when {
@@ -60,14 +62,14 @@ internal data class SyncState(
 
     fun remoteSelf(message: RemoteMessage): SyncState {
         require(message.sourceDeviceId == deviceId && message.revision > cursor)
-        require(pending == null && applying == null)
+        require(pending == null && applying == null && !recoveringConflict)
         return copy(cursor = message.revision, ack = Ack(message.id, message.revision, "self"))
     }
 
     /** Persist the journal before invoking the operating system clipboard write. */
     fun prepareApply(message: RemoteMessage): SyncState {
         require(message.sourceDeviceId != deviceId && message.revision > cursor)
-        require(pending == null && applying == null)
+        require(pending == null && applying == null && !recoveringConflict)
         return copy(applying = message)
     }
 
@@ -98,6 +100,23 @@ internal data class SyncState(
     }
 
     fun acknowledged(value: Ack): SyncState = if (ack == value) copy(ack = null) else this
+
+    /** Persist this choice before cancellation; copies observed during recovery are discarded. */
+    fun beginConflictRecovery(): SyncState {
+        check(applying == null)
+        return localCleared().copy(recoveringConflict = true)
+    }
+
+    /** Skip the current authorized delivery without writing either clipboard. */
+    fun finishConflictRecovery(remote: ServerState): SyncState {
+        check(recoveringConflict && pending == null && applying == null)
+        if (remote.epoch != epoch || remote.revision < cursor) throw RecoveryPairingRequired()
+        val skipped = remote.message?.let {
+            Ack(it.id, it.revision, if (it.sourceDeviceId == deviceId) "self" else "skipped")
+        }
+        return copy(cursor = remote.revision, queued = null, discardPending = false,
+            ack = skipped ?: ack, recoveringConflict = false)
+    }
 }
 
 internal data class LocalCopy(val id: String, val text: String, val createdAtMs: Long, val sensitive: Boolean = false)

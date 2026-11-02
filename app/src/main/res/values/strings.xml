@@ -239,7 +239,7 @@
     <string name="rcs_pair_success">Paired. Open this keyboard to start syncing.</string>
     <string name="rcs_pair_failed">Pairing failed. Check the address, account and password. Disconnect the existing pairing before changing servers.</string>
     <string name="rcs_enabled">Enable RustClipSync</string>
-    <string name="rcs_enabled_summary">Sync while this is the active input method. Pause retains pairing and the selected direction; pending local content still needs review.</string>
+    <string name="rcs_enabled_summary">Sync while this is the active input method. Pause retains pairing and direction; conflicting or expired copies are safely skipped automatically.</string>
     <string name="rcs_allow_sensitive">Sync marked sensitive text</string>
     <string name="rcs_allow_sensitive_summary">Off by default. Some apps may not mark sensitive content, so not all sensitive information can be identified.</string>
     <string name="rcs_about_title">RustClipSync synchronization</string>
@@ -251,17 +251,10 @@
     <string name="rcs_status_waiting">Waiting for the keyboard service.</string>
     <string name="rcs_status_connected">Connected.</string>
     <string name="rcs_status_offline">Offline; retrying with backoff.</string>
-    <string name="rcs_status_conflict">A local copy conflicts with the server or needs review.</string>
-    <string name="rcs_status_expired">An unsent copy expired; review it before retrying.</string>
+    <string name="rcs_status_recovering">Safely skipping an old pending copy; interrupted recovery retries automatically.</string>
     <string name="rcs_status_repair">Device revoked or server restored; disconnect and pair again.</string>
     <string name="rcs_status_storage_error">Secure storage or local state failed; synchronization is paused.</string>
     <string name="rcs_status_unsupported">This device needs Android 7 or newer for clipboard sync.</string>
-    <string name="rcs_resolve_title">Review pending local copy</string>
-    <string name="rcs_resolve_summary">Use the pending copy when a conflict or expired retry is reported.</string>
-    <string name="rcs_resolve_notice">This publishes the pending local copy over the current server value. A newer copy made during this operation will require review again.</string>
-    <string name="rcs_use_local">Use pending copy</string>
-    <string name="rcs_resolve_success">The pending copy is ready to sync.</string>
-    <string name="rcs_resolve_failed">Could not resolve the pending copy. Check the connection and review again.</string>
     <string name="rcs_disconnect">Disconnect this device</string>
     <string name="rcs_disconnect_summary">Revoke this synchronization session, then remove local pairing and pending data.</string>
     <string name="rcs_disconnect_notice">The server must confirm session revocation before local credentials are removed. If offline, credentials remain encrypted for retry. Administrators can separately revoke the device token.</string>

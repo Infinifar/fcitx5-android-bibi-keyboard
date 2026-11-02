@@ -91,12 +91,6 @@ class ClipboardSettingsFragment : ManagedPreferenceFragment(AppPrefs.getInstance
         }
         screen.addPreference(devicePreference)
         screen.addPreference(Preference(screen.context).apply {
-            setTitle(R.string.rcs_resolve_title)
-            setSummary(R.string.rcs_resolve_summary)
-            isIconSpaceReserved = false
-            setOnPreferenceClickListener { showResolveDialog(); true }
-        })
-        screen.addPreference(Preference(screen.context).apply {
             setTitle(R.string.rcs_disconnect)
             setSummary(R.string.rcs_disconnect_summary)
             isIconSpaceReserved = false
@@ -124,8 +118,7 @@ class ClipboardSettingsFragment : ManagedPreferenceFragment(AppPrefs.getInstance
         else when (prefs.getString(RCS_STATUS, "")) {
             "connected" -> R.string.rcs_status_connected
             "offline" -> R.string.rcs_status_offline
-            "conflict" -> R.string.rcs_status_conflict
-            "expired" -> R.string.rcs_status_expired
+            "conflict", "expired", "recovering" -> R.string.rcs_status_recovering
             "re_pair" -> R.string.rcs_status_repair
             "storage_error" -> R.string.rcs_status_storage_error
             "unsupported" -> R.string.rcs_status_unsupported
@@ -175,18 +168,6 @@ class ClipboardSettingsFragment : ManagedPreferenceFragment(AppPrefs.getInstance
             }
         }
         dialog.show()
-    }
-
-    private fun showResolveDialog() {
-        AlertDialog.Builder(requireContext()).setTitle(R.string.rcs_resolve_title)
-            .setMessage(R.string.rcs_resolve_notice)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(R.string.rcs_use_local) { _, _ ->
-                background(requireContext(), {
-                    SyncSetup.resolveWithLocal(it)
-                    preferencesFor(it).edit().putString(RCS_STATUS, "connecting").apply()
-                }) { success -> showResult(if (success) R.string.rcs_resolve_success else R.string.rcs_resolve_failed) }
-            }.show()
     }
 
     private fun showDisconnectDialog() {

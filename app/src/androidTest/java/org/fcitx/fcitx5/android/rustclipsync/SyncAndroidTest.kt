@@ -12,6 +12,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
+import org.fcitx.fcitx5.android.utils.clipboardIsSensitive
 import java.io.ByteArrayInputStream
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
@@ -77,6 +79,16 @@ class SyncAndroidTest {
             clipboard.setPrimaryClip(clip)
             assertEquals("fixture-sensitive", clipboard.primaryClip?.getItemAt(0)?.text?.toString())
             assertTrue(clipboard.primaryClip?.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE") == true)
+            val entry = requireNotNull(ClipboardEntry.fromClipData(clip))
+            assertTrue(entry.sensitive)
+            val edited = entry.toClipData("fixture-sensitive-edited")
+            assertTrue(clipboardIsSensitive(edited.description))
+            assertEquals("fixture-sensitive-edited", edited.getItemAt(0).text.toString())
+            val malformed = ClipData.newPlainText("fixture", "synthetic")
+            malformed.description.extras = PersistableBundle().apply {
+                putString("android.content.extra.IS_SENSITIVE", "invalid-flag-type")
+            }
+            assertTrue("invalid sensitivity metadata must fail closed", clipboardIsSensitive(malformed.description))
             clipboard.clearPrimaryClip()
         }
     }

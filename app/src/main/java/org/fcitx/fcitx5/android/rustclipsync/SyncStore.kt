@@ -120,6 +120,7 @@ internal class SyncStore(context: Context) {
         } } ?: JSONObject.NULL)
         put("queued", s.state.queued?.let(::encodeCopy) ?: JSONObject.NULL)
         put("discardPending", s.state.discardPending)
+        put("recoveringConflict", s.state.recoveringConflict)
         put("applying", s.state.applying?.let { m -> JSONObject().apply {
             put("id", m.id); put("revision", m.revision); put("source", m.sourceDeviceId); put("sensitive", m.sensitive)
         } } ?: JSONObject.NULL)
@@ -151,7 +152,8 @@ internal class SyncStore(context: Context) {
         return StoredSession(j.getString("url"), j.getString("token"), j.getBoolean("paired"), j.getBoolean("enabled"),
             SyncState(j.getString("epoch"), j.getString("deviceId"), j.getLong("cursor"),
                 pending, j.optJSONObject("queued")?.let(::decodeCopy),
-                j.optBoolean("discardPending", false), applying, ack),
+                j.optBoolean("discardPending", false), applying, ack,
+                j.optBoolean("recoveringConflict", false)),
             direction = SyncDirection.preference(j.optString("direction", "")),
             control = j.optJSONObject("control")?.let { DirectionControl(it.getString("sessionId"),
                 it.getLong("version"), SyncDirection.valueOf(it.getString("direction")), it.getBoolean("paused")) },

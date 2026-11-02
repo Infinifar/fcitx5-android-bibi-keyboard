@@ -239,7 +239,7 @@
     <string name="rcs_pair_success">配对成功。打开本输入法后开始同步。</string>
     <string name="rcs_pair_failed">配对失败，请检查地址、账户和密码。更换服务器前请先断开现有配对。</string>
     <string name="rcs_enabled">启用 RustClipSync</string>
-    <string name="rcs_enabled_summary">本输入法处于活动状态时同步；暂停保留配对和已选同步方向。</string>
+    <string name="rcs_enabled_summary">本输入法处于活动状态时同步；暂停保留配对和方向，冲突或过期的旧内容会自动安全跳过。</string>
     <string name="rcs_allow_sensitive">同步已标记的敏感文本</string>
     <string name="rcs_allow_sensitive_summary">默认关闭。部分应用可能不标记敏感内容，因此不能识别所有敏感信息。</string>
     <string name="rcs_about_title">RustClipSync 同步</string>
@@ -251,17 +251,10 @@
     <string name="rcs_status_waiting">正在等待输入法服务。</string>
     <string name="rcs_status_connected">已连接。</string>
     <string name="rcs_status_offline">连接中断，正在按退避间隔重试。</string>
-    <string name="rcs_status_conflict">本地待发送内容与服务端冲突，或需要重新确认。</string>
-    <string name="rcs_status_expired">未发送的内容已超过自动重试期限，请先确认。</string>
+    <string name="rcs_status_recovering">正在安全跳过旧待发送内容，中断后会自动重试。</string>
     <string name="rcs_status_repair">设备已撤销或服务端已恢复，请断开后重新配对。</string>
     <string name="rcs_status_storage_error">安全存储或本地状态出错，同步已暂停。</string>
     <string name="rcs_status_unsupported">剪贴板同步需要 Android 7 或更高版本。</string>
-    <string name="rcs_resolve_title">确认待发送内容</string>
-    <string name="rcs_resolve_summary">发生冲突或超过重试期限时，选择使用待发送的本地内容。</string>
-    <string name="rcs_resolve_notice">这会用待发送的本地内容覆盖服务端当前内容。如果操作期间又复制了新内容，需要再次确认。</string>
-    <string name="rcs_use_local">使用待发送内容</string>
-    <string name="rcs_resolve_success">待发送内容已准备好同步。</string>
-    <string name="rcs_resolve_failed">无法处理待发送内容，请检查连接并重新确认。</string>
     <string name="rcs_disconnect">断开此设备</string>
     <string name="rcs_disconnect_summary">撤销本次同步会话，再删除本地配对和待发送数据。</string>
     <string name="rcs_disconnect_notice">服务端确认撤销会话后才删除本地凭据。离线时会保留加密凭据以便重试；管理员仍可另行撤销设备令牌。</string>
