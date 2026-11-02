@@ -18,10 +18,11 @@ internal data class SyncState(
         require(!discardPending || (pending?.attempted == true && queued == null))
     }
 
-    fun localCopy(value: LocalCopy): SyncState {
+    fun localCopy(value: LocalCopy, baseRevision: Long = cursor): SyncState {
+        require(baseRevision >= cursor)
         val current = pending
         return when {
-            current == null -> copy(pending = Outbox(value, cursor, false))
+            current == null -> copy(pending = Outbox(value, baseRevision, false))
             !current.attempted -> copy(pending = Outbox(value, current.baseRevision, false))
             else -> copy(queued = value, discardPending = false)
         }

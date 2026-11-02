@@ -13,6 +13,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import androidx.appcompat.app.AlertDialog
 import androidx.preference.Preference
+import androidx.preference.ListPreference
 import androidx.preference.PreferenceManager
 import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
@@ -20,6 +21,7 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceFragment
 import org.fcitx.fcitx5.android.rustclipsync.RCS_ALLOW_SENSITIVE
+import org.fcitx.fcitx5.android.rustclipsync.RCS_DIRECTION
 import org.fcitx.fcitx5.android.rustclipsync.RCS_ENABLED
 import org.fcitx.fcitx5.android.rustclipsync.RCS_DEVICE_ID
 import org.fcitx.fcitx5.android.rustclipsync.RCS_PAIRED
@@ -58,6 +60,16 @@ class ClipboardSettingsFragment : ManagedPreferenceFragment(AppPrefs.getInstance
                     true
                 }
             }
+        })
+        screen.addPreference(ListPreference(screen.context).apply {
+            key = RCS_DIRECTION
+            setTitle(R.string.rcs_direction)
+            entries = arrayOf(getString(R.string.rcs_direction_push), getString(R.string.rcs_direction_receive),
+                getString(R.string.rcs_direction_both))
+            entryValues = arrayOf("PUSH_ONLY", "RECEIVE_ONLY", "BIDIRECTIONAL")
+            setDefaultValue("BIDIRECTIONAL")
+            summaryProvider = ListPreference.SimpleSummaryProvider.getInstance()
+            isIconSpaceReserved = false
         })
         screen.addPreference(SwitchPreferenceCompat(screen.context).apply {
             key = RCS_ALLOW_SENSITIVE
@@ -107,6 +119,7 @@ class ClipboardSettingsFragment : ManagedPreferenceFragment(AppPrefs.getInstance
         if (!::statusPreference.isInitialized) return
         val prefs = preferences()
         val label = if (!prefs.getBoolean(RCS_PAIRED, false)) R.string.rcs_status_unpaired
+        else if (prefs.getString(RCS_STATUS, "") == "logout_unconfirmed") R.string.rcs_logout_unconfirmed
         else if (!prefs.getBoolean(RCS_ENABLED, false)) R.string.rcs_status_disabled
         else when (prefs.getString(RCS_STATUS, "")) {
             "connected" -> R.string.rcs_status_connected
@@ -116,6 +129,8 @@ class ClipboardSettingsFragment : ManagedPreferenceFragment(AppPrefs.getInstance
             "re_pair" -> R.string.rcs_status_repair
             "storage_error" -> R.string.rcs_status_storage_error
             "unsupported" -> R.string.rcs_status_unsupported
+            "protocol_unsupported" -> R.string.rcs_protocol_unsupported
+            "session_revoked" -> R.string.rcs_session_revoked
             else -> R.string.rcs_status_waiting
         }
         statusPreference.setSummary(label)
@@ -155,7 +170,7 @@ class ClipboardSettingsFragment : ManagedPreferenceFragment(AppPrefs.getInstance
                         .putBoolean(RCS_ENABLED, true).putBoolean(RCS_REVIEW_PENDING, false).apply()
                 }) { success ->
                     dialog.dismiss()
-                    showResult(if (success) R.string.rcs_pair_success else R.string.rcs_pair_failed)
+                    showResult(if (success) R.string.rcs_pair_success else if (preferences().getString(RCS_STATUS, "") == "protocol_unsupported") R.string.rcs_protocol_unsupported else R.string.rcs_pair_failed)
                 }
             }
         }
@@ -182,17 +197,23 @@ class ClipboardSettingsFragment : ManagedPreferenceFragment(AppPrefs.getInstance
                 val context = requireContext()
                 preferences().edit().putBoolean(RCS_ENABLED, false).apply()
                 background(context, {
-                    SyncStore(it).clear()
+                    SyncSetup.disconnect(it)
                     preferencesFor(it).edit().putBoolean(RCS_PAIRED, false)
                         .remove(RCS_DEVICE_ID).putBoolean(RCS_REVIEW_PENDING, false).putString(RCS_STATUS, "disabled").apply()
-                }) { success -> showResult(if (success) R.string.rcs_disconnect_success else R.string.rcs_disconnect_failed) }
+                }) { success ->
+                    if (!success) preferences().edit().putString(RCS_STATUS, "logout_unconfirmed").apply()
+                    showResult(if (success) R.string.rcs_disconnect_success else R.string.rcs_logout_unconfirmed)
+                }
             }.show()
     }
 
     private fun background(context: Context, work: (Context) -> Unit, done: (Boolean) -> Unit) {
         val app = context.applicationContext
         Thread({
-            val success = try { work(app); true } catch (_: Exception) { false }
+            val success = try { work(app); true } catch (failure: org.fcitx.fcitx5.android.rustclipsync.HttpFailure) {
+                if (failure.status == 426) preferencesFor(app).edit().putString(RCS_STATUS, "protocol_unsupported").apply()
+                false
+            } catch (_: Exception) { false }
             main.post { if (isAdded) done(success) }
         }, "RustClipSync-settings").start()
     }

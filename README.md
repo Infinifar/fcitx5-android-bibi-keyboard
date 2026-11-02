@@ -1,6 +1,6 @@
 # fcitx5-android
 
-This fork is based on [BryceWG/fcitx5-android-bibi-keyboard](https://github.com/BryceWG/fcitx5-android-bibi-keyboard). It replaces the BiBi Keyboard clipboard synchronization bridge with [RustClipSync](https://github.com/Infinifar/rustclipsync-server), while retaining BiBi Keyboard voice input support. See [RustClipSync setup and limitations](RUSTCLIPSYNC.md). The upstream download links below refer to upstream builds, which do not include this fork's synchronization module. For this fork, use its [Actions builds](https://github.com/Infinifar/fcitx5-android-bibi-keyboard/actions).
+This fork is based on [BryceWG/fcitx5-android-bibi-keyboard](https://github.com/BryceWG/fcitx5-android-bibi-keyboard). It replaces the BiBi Keyboard clipboard synchronization bridge with [RustClipSync](https://github.com/Infinifar/rustclipsync-server), while retaining BiBi Keyboard voice input support. See [RustClipSync setup and limitations](RUSTCLIPSYNC.md), including protocol 3 device direction reporting, WSS/HTTP fallback, pause and confirmed logout. Protocol 3 requires matching server and client versions. The upstream download links below refer to upstream builds, which do not include this fork's synchronization module. For this fork, use its [Actions builds](https://github.com/Infinifar/fcitx5-android-bibi-keyboard/actions).
 
 [Fcitx5](https://github.com/fcitx/fcitx5) input method framework and engines ported to Android.
 

@@ -63,7 +63,7 @@ jobs:
       - name: Build release APK and run sync unit tests
         run: >-
           ./gradlew :app:assembleRelease :app:testDebugUnitTest
-          --tests org.fcitx.fcitx5.android.rustclipsync.SyncStateTest
+          --tests 'org.fcitx.fcitx5.android.rustclipsync.*'
           --no-daemon --console=plain
       - name: Sign and verify release APK
         shell: bash

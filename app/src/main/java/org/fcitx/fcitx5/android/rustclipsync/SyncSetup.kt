@@ -20,7 +20,7 @@ internal object SyncSetup {
         val (epoch, baseline) = transport.register(candidate.state.deviceId, candidate.token, user, password)
         store.update { current ->
             check(!current.paired && current.state.deviceId == candidate.state.deviceId && current.url == url)
-            current.copy(paired = true, enabled = true, state = current.state.copy(epoch = epoch, cursor = baseline))
+            current.copy(paired = true, enabled = true, state = current.state.copy(epoch = epoch, cursor = baseline), observedRevision = baseline)
         }
         return candidate.state.deviceId
     }
@@ -37,18 +37,38 @@ internal object SyncSetup {
             .getBoolean(RCS_ALLOW_SENSITIVE, false)) { "sensitive sync is disabled" }
         val transport = SyncTransport(original.url)
         if (pending.attempted) transport.cancel(original, pending)
-        val latestRemote = transport.state(original)
-        check(latestRemote.epoch == original.state.epoch)
-        val ack = latestRemote.message?.let {
-            Ack(it.id, it.revision, if (it.sourceDeviceId == original.state.deviceId) "self" else "skipped")
+        val controller = SyncDirectionController(store::load, store::update, SyncDirectionTransport(transport))
+        controller.use { currentController ->
+            currentController.withSession(original.direction, !original.enabled) { connected ->
+                val latestRemote = transport.state(connected)
+                check(latestRemote.epoch == original.state.epoch)
+                val ack = latestRemote.message?.let {
+                    Ack(it.id, it.revision, if (it.sourceDeviceId == original.state.deviceId) "self" else "skipped")
+                }
+                val replacement = LocalCopy(UUID.randomUUID().toString(), latestLocal.text, System.currentTimeMillis(), latestLocal.sensitive)
+                store.update { current ->
+                    // A new local copy during this operation wins and must be reviewed again.
+                    check(current.state == original.state && current.state.deviceId == original.state.deviceId) { "clipboard changed during conflict resolution" }
+                    current.copy(observedRevision = latestRemote.revision, state = SyncState(original.state.epoch, original.state.deviceId, original.state.cursor,
+                        pending = Outbox(replacement, latestRemote.revision, false), ack = ack))
+                }
+            }
         }
-        val replacement = LocalCopy(UUID.randomUUID().toString(), latestLocal.text, System.currentTimeMillis(), latestLocal.sensitive)
-        store.update { current ->
-            // A new local copy during this operation wins and must be reviewed again.
-            check(current == original) { "clipboard changed during conflict resolution" }
-            current.copy(state = SyncState(original.state.epoch, original.state.deviceId, latestRemote.revision,
-                pending = Outbox(replacement, latestRemote.revision, false), ack = ack))
+    }
+
+    fun disconnect(context: Context) {
+        val store = SyncStore(context)
+        val session = store.load() ?: return
+        if (session.paired) {
+            try {
+                SyncDirectionController(store::load, store::update,
+                    SyncDirectionTransport(SyncTransport(session.url))).use { it.revoke() }
+            } catch (failure: HttpFailure) {
+                // A confirmed invalidated token cannot retain an active server session.
+                if (failure.status != 401 || failure.code != "UNAUTHENTICATED") throw failure
+            }
         }
+        store.clear()
     }
 
     private fun token(): String {
