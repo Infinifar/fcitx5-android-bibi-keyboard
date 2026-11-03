@@ -72,3 +72,7 @@ Android 13+ 的 `ClipDescription.EXTRA_IS_SENSITIVE` 与旧版本的 `android.co
 自动恢复新增回归覆盖：旧事务与排队复制丢弃、取消前后断网与重启、已提交上传、持久化失败前无网络副作用、实例变化停止、旧 generation 退出。测试使用合成数据；设备端另核对 Keystore 恢复标记、敏感历史编辑复制和拒收行为，不把 JVM 结果当成系统预览或厂商行为验证。
 
 2026-11-03 本机验证：同步模块 30 项 JVM 测试全部通过，包括 7 项自动恢复测试，以及临时 Rust 3.0 服务端的真实 TLS/WSS 和强制 HTTP 降级互通。`compileDebugKotlin` 与 `compileDebugAndroidTestKotlin` 通过。完整 APK 的本机原生构建缺少 ECM，交由已有 GitHub 构建环境完成；本轮未启动模拟器或操作用户实际剪贴板，不宣称系统预览／真机验收完成。
+
+## 0.1.5 正式发布
+
+协议 3、方向/暂停上报、自动安全跳过旧上传及敏感标记修复已合入主分支 master。ARM64 正式 APK 沿用既有签名，versionCode 142；发布流程核对上一版签名与版本递增后才公开 Release。详情见 [发布说明](releases/0.1.5.md)。
