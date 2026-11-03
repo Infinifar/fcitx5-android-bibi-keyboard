@@ -7,10 +7,12 @@ package org.fcitx.fcitx5.android.data.clipboard.db
 import android.content.ClipData
 import android.content.ClipDescription
 import android.os.Build
+import android.os.PersistableBundle
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import org.fcitx.fcitx5.android.utils.timestamp
+import org.fcitx.fcitx5.android.utils.clipboardIsSensitive
 
 @Entity(tableName = ClipboardEntry.TABLE_NAME)
 data class ClipboardEntry(
@@ -27,16 +29,19 @@ data class ClipboardEntry(
     @ColumnInfo(defaultValue = "0")
     val sensitive: Boolean = false
 ) {
+    /** Editing and copying a marked history entry must not declassify it. */
+    fun toClipData(value: String = text): ClipData = ClipData.newPlainText("", value).apply {
+        if (sensitive && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            description.extras = PersistableBundle().apply {
+                putBoolean("android.content.extra.IS_SENSITIVE", true)
+            }
+        }
+    }
+
     companion object {
         const val BULLET = "•"
 
         const val TABLE_NAME = "clipboard"
-
-        private val IS_SENSITIVE = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ClipDescription.EXTRA_IS_SENSITIVE
-        } else {
-            "android.content.extra.IS_SENSITIVE"
-        }
 
         fun fromClipData(
             clipData: ClipData,
@@ -47,7 +52,7 @@ data class ClipboardEntry(
             val item = clipData.getItemAt(0) ?: return null
             val str = item.text?.toString() ?: return null
             val sensitive = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                desc.extras?.getBoolean(IS_SENSITIVE) ?: false
+                clipboardIsSensitive(desc)
             } else {
                 false
             }

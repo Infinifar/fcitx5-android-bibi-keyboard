@@ -10,7 +10,7 @@ import java.net.URI
 import java.net.URL
 import java.util.UUID
 
-internal class HttpFailure(val status: Int) : IOException("HTTP $status")
+internal class HttpFailure(val status: Int, val code: String? = null) : IOException("HTTP $status")
 
 internal data class ServerState(
     val epoch: String,
@@ -22,7 +22,7 @@ internal data class ServerState(
 
 /** HTTPS only, no redirects, bounded bodies, and no credentials in URLs or logs. */
 internal class SyncTransport(serverUrl: String) {
-    private val base: URI
+    internal val base: URI
 
     init {
         require(serverUrl.length <= 2048)
@@ -48,18 +48,18 @@ internal class SyncTransport(serverUrl: String) {
         return epoch to ack
     }
 
-    fun state(session: StoredSession): ServerState = parseState(json(request("GET", "api/state", bearer(session))))
+    fun state(session: StoredSession): ServerState = parseState(json(request("GET", "api/state", bearer(session), headers = sessionHeaders(session))))
 
     fun waitForChanges(session: StoredSession): ServerState? {
         val s = session.state
         requireUuid(s.epoch)
-        val bytes = request("GET", "api/changes?epoch=${s.epoch}&after=${s.cursor}", bearer(session), timeoutMs = 30_000)
+        val bytes = request("GET", "api/changes?epoch=${s.epoch}&after=${session.observedRevision}", bearer(session), headers = sessionHeaders(session), timeoutMs = 30_000)
         return bytes?.let { parseState(JSONObject(it.toString(Charsets.UTF_8))) }
     }
 
     fun content(session: StoredSession, message: RemoteMessage): String {
         requireUuid(message.id)
-        val bytes = requireNotNull(request("GET", "api/messages/${message.id}/content", bearer(session), limit = SyncStore.MAX_TEXT_BYTES))
+        val bytes = requireNotNull(request("GET", "api/messages/${message.id}/content", bearer(session), headers = sessionHeaders(session), limit = SyncStore.MAX_TEXT_BYTES))
         val decoder = Charsets.UTF_8.newDecoder()
         return decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
     }
@@ -71,7 +71,7 @@ internal class SyncTransport(serverUrl: String) {
         val reply = json(request("PUT", "api/messages/${outbox.copy.id}", bearer(session), bytes,
             "text/plain; charset=utf-8", headers = mapOf("X-RCS-Epoch" to session.state.epoch,
                 "X-RCS-Base-Revision" to outbox.baseRevision.toString(),
-                "X-RCS-Sensitive" to if (outbox.copy.sensitive) "1" else "0")))
+                "X-RCS-Sensitive" to if (outbox.copy.sensitive) "1" else "0") + sessionHeaders(session)))
         require(reply.getString("epoch") == session.state.epoch && reply.getString("messageId") == outbox.copy.id)
         return reply.getLong("revision").also { require(it > outbox.baseRevision) }
     }
@@ -91,13 +91,13 @@ internal class SyncTransport(serverUrl: String) {
     fun acknowledge(session: StoredSession, ack: Ack) {
         val body = JSONObject().put("epoch", session.state.epoch).put("revision", ack.revision)
             .put("messageId", ack.id).put("result", ack.result).toString().toByteArray(Charsets.UTF_8)
-        val reply = json(request("POST", "api/ack", bearer(session), body, "application/json"))
+        val reply = json(request("POST", "api/ack", bearer(session), body, "application/json", headers = sessionHeaders(session)))
         require(reply.getLong("ackRevision") >= ack.revision)
     }
 
-    private fun bearer(session: StoredSession) = "Bearer ${session.state.deviceId}:${session.token}"
+    internal fun bearer(session: StoredSession) = "Bearer ${session.state.deviceId}:${session.token}"
 
-    private fun parseState(j: JSONObject): ServerState {
+    internal fun parseState(j: JSONObject): ServerState {
         val epoch = j.getString("epoch").also(::requireUuid)
         val revision = j.getLong("revision")
         val ack = j.getLong("ackRevision")
@@ -106,10 +106,9 @@ internal class SyncTransport(serverUrl: String) {
             val id = j.getString("messageId").also(::requireUuid)
             val source = j.getString("sourceDeviceId").also(::requireUuid)
             require(!j.isNull("sensitive"))
-            RemoteMessage(id, revision, source, j.getBoolean("sensitive"))
+            RemoteMessage(id, j.getLong("deliveryRevision").also { require(it in 1..revision) }, source, j.getBoolean("sensitive"))
         }
-        require((revision == 0L) == (message == null))
-        if (message == null) require(j.isNull("sensitive"))
+        if (message == null) require(j.isNull("sensitive") && j.isNull("deliveryRevision") && j.isNull("sourceDeviceId") && j.isNull("size"))
         val size = if (j.isNull("size")) null else j.getLong("size")
         if (message != null) require(size != null && size in 0..SyncStore.MAX_TEXT_BYTES.toLong())
         return ServerState(epoch, revision, ack, message, size)
@@ -117,7 +116,7 @@ internal class SyncTransport(serverUrl: String) {
 
     private fun json(bytes: ByteArray?) = JSONObject(requireNotNull(bytes).toString(Charsets.UTF_8))
 
-    private fun request(method: String, path: String, auth: String, body: ByteArray? = null,
+    internal fun request(method: String, path: String, auth: String, body: ByteArray? = null,
                         contentType: String? = null, headers: Map<String, String> = emptyMap(),
                         timeoutMs: Int = 10_000, limit: Int = 16 * 1024): ByteArray? {
         val target: URL = base.resolve(path).toURL()
@@ -130,6 +129,7 @@ internal class SyncTransport(serverUrl: String) {
             connection.readTimeout = timeoutMs
             connection.requestMethod = method
             connection.setRequestProperty("Authorization", auth)
+            connection.setRequestProperty("X-RCS-Protocol", PROTOCOL_VERSION)
             connection.setRequestProperty("Cache-Control", "no-store")
             headers.forEach { (key, value) -> connection.setRequestProperty(key, value) }
             if (body != null) {
@@ -139,8 +139,14 @@ internal class SyncTransport(serverUrl: String) {
                 connection.outputStream.use { it.write(body) }
             }
             val status = connection.responseCode
+            if (status !in 200..299) {
+                val code = runCatching { connection.errorStream?.use { it.readBytesBounded(4096) }
+                    ?.let { JSONObject(it.toString(Charsets.UTF_8)).optString("code", "").takeIf(String::isNotEmpty) } }.getOrNull()
+                throw HttpFailure(status, code)
+            }
+            if (connection.getHeaderField("X-RCS-Protocol") != PROTOCOL_VERSION)
+                throw HttpFailure(426, "PROTOCOL_UNSUPPORTED")
             if (status == 204) return null
-            if (status !in 200..299) throw HttpFailure(status)
             require(connection.contentLength < 0 || connection.contentLength <= limit)
             return connection.inputStream.use { input ->
                 val output = ByteArrayOutputStream()
@@ -157,6 +163,20 @@ internal class SyncTransport(serverUrl: String) {
             }
         } finally {
             connection.disconnect()
+        }
+    }
+
+    private fun sessionHeaders(session: StoredSession): Map<String, String> =
+        mapOf("X-RCS-Sync-Session" to requireNotNull(session.control).sessionId)
+
+    private fun java.io.InputStream.readBytesBounded(limit: Int): ByteArray {
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(1024)
+        while (true) {
+            val n = read(buffer)
+            if (n < 0) return output.toByteArray()
+            if (output.size() + n > limit) throw IOException("response too large")
+            output.write(buffer, 0, n)
         }
     }
 

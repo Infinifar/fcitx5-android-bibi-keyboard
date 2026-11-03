@@ -5,7 +5,6 @@
 package org.fcitx.fcitx5.android.ui.main
 
 import android.app.Activity
-import android.content.ClipData
 import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
@@ -28,7 +27,7 @@ class ClipboardEditActivity : Activity() {
 
     private lateinit var editText: EditText
 
-    private var entryId: Int = -1
+    private var entry: ClipboardEntry? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,18 +44,19 @@ class ClipboardEditActivity : Activity() {
     }
 
     private fun finishEditing(copy: Boolean = false) {
+        val current = entry ?: return
         val str = editText.str
         scope.launch {
-            ClipboardManager.updateText(entryId, str)
+            ClipboardManager.updateText(current.id, str)
             if (copy) {
-                clipboardManager.setPrimaryClip(ClipData.newPlainText("", str))
+                clipboardManager.setPrimaryClip(current.toClipData(str))
             }
+            finish()
         }
-        finish()
     }
 
     private fun setEntry(entry: ClipboardEntry) {
-        entryId = entry.id
+        this.entry = entry
         editText.setText(entry.text)
     }
 

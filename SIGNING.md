@@ -41,6 +41,6 @@ printf '%s' "$rcs_sign_password" | gh secret set KEY_PASSWORD --repo "$repo"
 unset rcs_sign_password
 ```
 
-完成后在仓库 Actions 中运行 **Build signed ARM64 release APK**，选择 `master`。工作流构建 release、校验签名及架构，并将 APK 和 SHA-256 文件作为构建产物保留 30 天；它不会自动创建 GitHub Release 或发布到应用商店。产物可供下载，但正式分发前仍需真实设备验收。
+完成后在仓库 Actions 中运行 **Build signed ARM64 release APK**，选择 `master`。工作流构建 release、校验签名及架构，并将 APK 和 SHA-256 文件作为构建产物保留 30 天；默认不发布；启用 publish_release 后会校验与上一正式版签名一致且 versionCode 递增，再创建 GitHub Release。不会发布到应用商店。产物可供下载，但正式分发前仍需真实设备验收。
 
 参考：[Android 签名文档](https://developer.android.com/studio/publish/app-signing)、[GitHub Actions secrets 文档](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets)。

@@ -6,7 +6,7 @@ on:
       version_name:
         description: RustClipSync release version name
         required: true
-        default: 0.1.4
+        default: 0.1.5
       publish_release:
         description: Publish the verified APK to GitHub Releases
         type: boolean
@@ -63,7 +63,7 @@ jobs:
       - name: Build release APK and run sync unit tests
         run: >-
           ./gradlew :app:assembleRelease :app:testDebugUnitTest
-          --tests org.fcitx.fcitx5.android.rustclipsync.SyncStateTest
+          --tests 'org.fcitx.fcitx5.android.rustclipsync.*'
           --no-daemon --console=plain
       - name: Sign and verify release APK
         shell: bash

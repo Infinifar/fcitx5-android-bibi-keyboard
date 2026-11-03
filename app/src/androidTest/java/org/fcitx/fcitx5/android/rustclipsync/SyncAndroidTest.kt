@@ -12,6 +12,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
+import org.fcitx.fcitx5.android.utils.clipboardIsSensitive
 import java.io.ByteArrayInputStream
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
@@ -77,6 +79,16 @@ class SyncAndroidTest {
             clipboard.setPrimaryClip(clip)
             assertEquals("fixture-sensitive", clipboard.primaryClip?.getItemAt(0)?.text?.toString())
             assertTrue(clipboard.primaryClip?.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE") == true)
+            val entry = requireNotNull(ClipboardEntry.fromClipData(clip))
+            assertTrue(entry.sensitive)
+            val edited = entry.toClipData("fixture-sensitive-edited")
+            assertTrue(clipboardIsSensitive(edited.description))
+            assertEquals("fixture-sensitive-edited", edited.getItemAt(0).text.toString())
+            val malformed = ClipData.newPlainText("fixture", "synthetic")
+            malformed.description.extras = PersistableBundle().apply {
+                putString("android.content.extra.IS_SENSITIVE", "invalid-flag-type")
+            }
+            assertTrue("invalid sensitivity metadata must fail closed", clipboardIsSensitive(malformed.description))
             clipboard.clearPrimaryClip()
         }
     }
@@ -148,7 +160,10 @@ class SyncAndroidTest {
                 val initial = StoredSession(url, token, false, true, SyncState("", UUID.randomUUID().toString(), 0))
                 val (epoch, revision) = transport.register(initial.state.deviceId, initial.token,
                     requireNotNull(args.getString("rcs_user")), requireNotNull(args.getString("rcs_password")))
-                return initial.copy(paired = true, state = initial.state.copy(epoch = epoch, cursor = revision))
+                var accepted = initial.copy(paired = true, state = initial.state.copy(epoch = epoch, cursor = revision), observedRevision = revision)
+                SyncDirectionController({ accepted }, { transform -> transform(accepted).also { accepted = it } },
+                    SyncDirectionTransport(transport)).use { it.ensure(SyncDirection.BIDIRECTIONAL, false) { true } }
+                return accepted
             }
             val device = registration("7a".repeat(32))
             val remote = registration("8b".repeat(32))
@@ -159,21 +174,21 @@ class SyncAndroidTest {
                 .putBoolean(RCS_REVIEW_PENDING, false).putString(RCS_STATUS, "connecting").commit()
             instrumentation.runOnMainSync { runtime.create() }
             instrumentation.runOnMainSync { clipboard.setPrimaryClip(ClipData.newPlainText("fixture", "local-runtime")) }
-            waitUntil("local copy was not uploaded") { transport.state(device).revision == baseline + 1 }
+            waitUntil("local copy was not uploaded") { transport.state(requireNotNull(store.load())).revision == baseline + 1 }
             val remoteCopy = LocalCopy(UUID.randomUUID().toString(), "remote-runtime", System.currentTimeMillis())
             assertEquals(baseline + 2, transport.send(remote, Outbox(remoteCopy, baseline + 1, true)))
             waitUntil("remote copy was not applied") {
                 clipboard.primaryClip?.getItemAt(0)?.text?.toString() == "remote-runtime"
             }
             Thread.sleep(1200)
-            assertEquals("remote write must not be echoed", baseline + 2, transport.state(device).revision)
+            assertEquals("remote write must not be echoed", baseline + 2, transport.state(requireNotNull(store.load())).revision)
             instrumentation.runOnMainSync { clipboard.clearPrimaryClip() }
             assertEquals(baseline + 2, transport.send(remote, Outbox(remoteCopy, baseline + 1, true)))
             Thread.sleep(1200)
             assertEquals(null, clipboard.primaryClip)
             val blocked = LocalCopy(UUID.randomUUID().toString(), "blocked-sensitive", System.currentTimeMillis(), true)
             assertEquals(baseline + 3, transport.send(remote, Outbox(blocked, baseline + 2, true)))
-            waitUntil("sensitive skip was not acknowledged") { transport.state(device).ackRevision >= baseline + 3 }
+            waitUntil("sensitive skip was not acknowledged") { transport.state(requireNotNull(store.load())).ackRevision >= baseline + 3 }
             assertEquals(null, clipboard.primaryClip)
             prefs.edit().putBoolean(RCS_ALLOW_SENSITIVE, true).commit()
             val allowed = LocalCopy(UUID.randomUUID().toString(), "allowed-sensitive", System.currentTimeMillis(), true)
@@ -183,7 +198,7 @@ class SyncAndroidTest {
             }
             assertTrue(clipboard.primaryClip?.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE") == true)
             Thread.sleep(1200)
-            assertEquals(baseline + 4, transport.state(device).revision)
+            assertEquals(baseline + 4, transport.state(requireNotNull(store.load())).revision)
         } finally {
             instrumentation.runOnMainSync { runtime.destroy(); clipboard.clearPrimaryClip() }
             prefs.edit().putBoolean(RCS_ENABLED, false).putBoolean(RCS_ALLOW_SENSITIVE, false).commit()

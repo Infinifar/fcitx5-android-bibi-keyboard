@@ -53,7 +53,7 @@ jobs:
       - name: Build signed debug APK and run sync unit tests
         run: >-
           ./gradlew :app:assembleDebug :app:testDebugUnitTest
-          --tests org.fcitx.fcitx5.android.rustclipsync.SyncStateTest
+          --tests 'org.fcitx.fcitx5.android.rustclipsync.*'
           --no-daemon --console=plain
 
       - name: Verify APK signature and architecture

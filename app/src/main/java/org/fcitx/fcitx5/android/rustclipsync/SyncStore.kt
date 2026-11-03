@@ -20,6 +20,11 @@ internal data class StoredSession(
     val paired: Boolean,
     val enabled: Boolean,
     val state: SyncState,
+    val direction: SyncDirection = SyncDirection.BIDIRECTIONAL,
+    val control: DirectionControl? = null,
+    val controlPending: DirectionOperation? = null,
+    val logoutPending: Boolean = false,
+    val observedRevision: Long = state.cursor,
 )
 
 /** The outbox and device token are encrypted by a non-exportable Android Keystore key. */
@@ -102,11 +107,20 @@ internal class SyncStore(context: Context) {
         put("epoch", s.state.epoch)
         put("deviceId", s.state.deviceId)
         put("cursor", s.state.cursor)
+        put("observedRevision", s.observedRevision)
+        put("direction", s.direction.name)
+        put("logoutPending", s.logoutPending)
+        put("control", s.control?.let { c -> JSONObject().put("sessionId", c.sessionId)
+            .put("version", c.version).put("direction", c.direction.name).put("paused", c.paused) } ?: JSONObject.NULL)
+        put("controlPending", s.controlPending?.let { c -> JSONObject().put("sessionId", c.sessionId)
+            .put("version", c.version).put("direction", c.direction.name).put("paused", c.paused)
+            .put("connect", c.connect).put("revoke", c.revoke) } ?: JSONObject.NULL)
         put("pending", s.state.pending?.let { p -> JSONObject().apply {
             put("copy", encodeCopy(p.copy)); put("base", p.baseRevision); put("attempted", p.attempted)
         } } ?: JSONObject.NULL)
         put("queued", s.state.queued?.let(::encodeCopy) ?: JSONObject.NULL)
         put("discardPending", s.state.discardPending)
+        put("recoveringConflict", s.state.recoveringConflict)
         put("applying", s.state.applying?.let { m -> JSONObject().apply {
             put("id", m.id); put("revision", m.revision); put("source", m.sourceDeviceId); put("sensitive", m.sensitive)
         } } ?: JSONObject.NULL)
@@ -138,7 +152,16 @@ internal class SyncStore(context: Context) {
         return StoredSession(j.getString("url"), j.getString("token"), j.getBoolean("paired"), j.getBoolean("enabled"),
             SyncState(j.getString("epoch"), j.getString("deviceId"), j.getLong("cursor"),
                 pending, j.optJSONObject("queued")?.let(::decodeCopy),
-                j.optBoolean("discardPending", false), applying, ack))
+                j.optBoolean("discardPending", false), applying, ack,
+                j.optBoolean("recoveringConflict", false)),
+            direction = SyncDirection.preference(j.optString("direction", "")),
+            control = j.optJSONObject("control")?.let { DirectionControl(it.getString("sessionId"),
+                it.getLong("version"), SyncDirection.valueOf(it.getString("direction")), it.getBoolean("paused")) },
+            controlPending = j.optJSONObject("controlPending")?.let { DirectionOperation(it.getString("sessionId"),
+                it.getLong("version"), SyncDirection.valueOf(it.getString("direction")), it.getBoolean("paused"),
+                it.getBoolean("connect"), it.getBoolean("revoke")) },
+            logoutPending = j.optBoolean("logoutPending", false),
+            observedRevision = j.optLong("observedRevision", j.getLong("cursor")))
     }
 
     companion object {
