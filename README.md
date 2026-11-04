@@ -4,6 +4,14 @@ This fork is based on [BryceWG/fcitx5-android-bibi-keyboard](https://github.com/
 
 [Fcitx5](https://github.com/fcitx/fcitx5) input method framework and engines ported to Android.
 
+## Precautions: other clipboard sync tools
+
+**Use one clipboard synchronization system for the same group of devices.** Disable overlapping clipboard sharing in other tools, such as Lenovo Smart Connect / Super Connect, Windows cloud clipboard, phone-link utilities, KDE Connect or remote-desktop clipboard redirection. Their other features can remain enabled. Using one RustClipSync client on each of several devices is supported; avoid running multiple sync clients on the same device.
+
+Another tool may strip or replace RustClipSync's clipboard origin marker when forwarding text. A client can then treat the returned text as a new local copy, assign a new message ID and upload it again, creating a feedback loop with repeated receiving, sending and notifications. Message-ID and cursor deduplication cannot stop copies that have been assigned new IDs; cross-tool loop prevention is not guaranteed.
+
+If a loop occurs, pause synchronization on the affected clients, disable the overlapping clipboard-sharing channel, then resume the clients one at a time and verify with a single non-sensitive test copy. Use the sync pause/disable control; closing a window may leave the background client running.
+
 ## Download
 
 [<img src="https://github.com/rubenpgrady/get-it-on-github/raw/refs/heads/main/get-it-on-github.png" alt="Git it on GitHub" width="207" height="80">](https://github.com/fcitx5-android/fcitx5-android/releases/latest)
